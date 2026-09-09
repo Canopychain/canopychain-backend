@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { requireAdminApiKey } from '../middleware/adminAuth.js';
+import { requireAdminSignature } from '../middleware/adminAuth.js';
 
 const reviewBodySchema = z.object({
   reviewNote: z.string().max(2000).optional(),
@@ -15,7 +15,7 @@ function serializeProject<T extends { onChainId: bigint }>(project: T) {
 }
 
 export async function projectAdminRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/projects/pending', { preHandler: requireAdminApiKey }, async () => {
+  app.get('/projects/pending', { preHandler: requireAdminSignature }, async () => {
     const projects = await prisma.project.findMany({
       where: { approved: false, cancelled: false },
       orderBy: { createdAt: 'desc' },
@@ -34,7 +34,7 @@ export async function projectAdminRoutes(app: FastifyInstance): Promise<void> {
   // place.
   app.post(
     '/projects/:id/reject',
-    { preHandler: requireAdminApiKey },
+    { preHandler: requireAdminSignature },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = reviewBodySchema.safeParse(request.body ?? {});
