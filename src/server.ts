@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 
 import { prisma } from './db.js';
+import { projectRegistrationRoutes } from './routes/projectRegistration.js';
 import { projectRoutes } from './routes/projects.js';
 
 export function buildServer() {
@@ -12,6 +13,7 @@ export function buildServer() {
   });
 
   app.register(projectRoutes);
+  app.register(projectRegistrationRoutes);
 
   return app;
 }

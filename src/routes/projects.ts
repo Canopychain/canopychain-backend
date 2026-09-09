@@ -2,13 +2,22 @@ import type { FastifyInstance } from 'fastify';
 
 import { prisma } from '../db.js';
 
+// onChainId is a BigInt; Fastify's default JSON.stringify serializer (no
+// response schema is defined yet) throws on BigInt, so it has to go out
+// as a string.
+function serializeProject<T extends { onChainId: bigint }>(project: T) {
+  return { ...project, onChainId: project.onChainId.toString() };
+}
+
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/projects', async () => {
-    return prisma.project.findMany({
+    const projects = await prisma.project.findMany({
       where: { approved: true },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+
+    return projects.map(serializeProject);
   });
 
   app.get('/projects/:id', async (request, reply) => {
@@ -29,7 +38,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const { donations, ...profile } = project;
 
     return {
-      ...profile,
+      ...serializeProject(profile),
       stats: {
         donorCount: donations.length,
         milestonesAttested: profile.milestones.filter((m) => m.status === 'ATTESTED').length,
