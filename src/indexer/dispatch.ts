@@ -1,4 +1,5 @@
 import { MILESTONE_VAULT_CONTRACT_ID, PROJECT_REGISTRY_CONTRACT_ID } from './contracts.js';
+import { handleMilestoneVaultEvent } from './handlers/milestoneVault.js';
 import { handleProjectRegistryEvent } from './handlers/projectRegistry.js';
 import type { ContractEvent, EventHandler } from './worker.js';
 
@@ -8,7 +9,7 @@ export const dispatchEvent: EventHandler = async (event: ContractEvent) => {
       await handleProjectRegistryEvent(event);
       break;
     case MILESTONE_VAULT_CONTRACT_ID:
-      // Handled in an upcoming commit.
+      await handleMilestoneVaultEvent(event);
       break;
     default:
       break;
