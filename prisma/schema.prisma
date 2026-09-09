@@ -106,3 +106,13 @@ model ForestCoverSnapshot {
   @@index([projectId])
   @@map("forest_cover_snapshots")
 }
+
+/// Single-row-per-id table tracking how far the event indexer has gotten,
+/// so a restart resumes instead of re-scanning from "now" every time.
+model IndexerCheckpoint {
+  id         String   @id
+  lastLedger Int      @map("last_ledger")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("indexer_checkpoints")
+}
