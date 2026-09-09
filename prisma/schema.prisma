@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Donor {
+  id        String           @id @default(uuid())
+  address   String           @unique
+  createdAt DateTime         @default(now()) @map("created_at")
+  donations ProjectDonation[]
+
+  @@map("donors")
+}
+
+model Project {
+  id             String            @id @default(uuid())
+  /// Project id shared by the project-registry and milestone-vault
+  /// contracts — the same id names a project's registry entry and its
+  /// pooled-donation vault.
+  onChainId      BigInt            @unique @map("on_chain_id")
+  operatorAddress String           @map("operator_address")
+  recipientAddress String          @map("recipient_address")
+  attestorAddress String           @map("attestor_address")
+  name           String
+  /// The plot boundary as GeoJSON, queried against the Global Forest Watch
+  /// API. `polygonHash` is the hex-encoded hash committed on-chain in
+  /// project-registry so this polygon can't be swapped after donors fund
+  /// the project — the backend is the source of truth for the shape, the
+  /// chain is the source of truth for its hash.
+  polygonGeoJson Json              @map("polygon_geojson")
+  polygonHash    String            @map("polygon_hash")
+  approved       Boolean           @default(false)
+  cancelled      Boolean           @default(false)
+  /// i128 values mirrored from the milestone-vault contract, stored as
+  /// decimal strings to avoid precision loss.
+  totalDeposited String            @default("0") @map("total_deposited")
+  totalReleased  String            @default("0") @map("total_released")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  milestones     Milestone[]
+  donations      ProjectDonation[]
+  snapshots      ForestCoverSnapshot[]
+
+  @@map("projects")
+}
+
+enum MilestoneStatus {
+  PENDING
+  ATTESTED
+}
+
+model Milestone {
+  id            String          @id @default(uuid())
+  projectId     String          @map("project_id")
+  project       Project         @relation(fields: [projectId], references: [id])
+  /// Position of this tranche in the project's on-chain schedule (0-based).
+  index         Int
+  thresholdBps  Int             @map("threshold_bps")
+  payoutBps     Int             @map("payout_bps")
+  status        MilestoneStatus @default(PENDING)
+  attestedAt    DateTime?       @map("attested_at")
+  payoutAmount  String?         @map("payout_amount")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@unique([projectId, index])
+  @@map("milestones")
+}
+
+model ProjectDonation {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  project   Project  @relation(fields: [projectId], references: [id])
+  donorId   String   @map("donor_id")
+  donor     Donor    @relation(fields: [donorId], references: [id])
+  /// i128 value from the contract, stored as a decimal string.
+  amount    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, donorId])
+  @@map("project_donations")
+}
+
+/// One Global Forest Watch check for a project's polygon. `changeBps` is
+/// the cumulative forest-cover change since the project's baseline
+/// snapshot, in basis points of plot area — the same unit milestone
+/// thresholds are expressed in, so a snapshot can be compared to a
+/// project's schedule directly.
+model ForestCoverSnapshot {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id])
+  checkedAt   DateTime @default(now()) @map("checked_at")
+  forestCoverPct Float @map("forest_cover_pct")
+  changeBps   Int      @map("change_bps")
+  rawResponse Json?    @map("raw_response")
+
+  @@index([projectId])
+  @@map("forest_cover_snapshots")
+}
