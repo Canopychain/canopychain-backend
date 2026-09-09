@@ -9,6 +9,22 @@ jobs:
   build-test:
     name: Lint, typecheck, test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: canopychain
+          POSTGRES_PASSWORD: canopychain
+          POSTGRES_DB: canopychain_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://canopychain:canopychain@localhost:5432/canopychain_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +43,13 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Sync test database schema
+        # db push, not migrate deploy: no migration files exist yet (no
+        # local Postgres has been available to generate them from), and
+        # db push is the officially recommended way to sync an ephemeral
+        # test database directly from schema.prisma.
+        run: npx prisma db push
 
       - name: Test
         run: npm test

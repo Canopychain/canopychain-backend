@@ -1,3 +1,8 @@
+// Must be the first import: every other module (transitively, db.ts) reads
+// process.env at module-load time, so the environment has to be populated
+// before anything else is imported.
+import 'dotenv/config';
+
 import { dispatchEvent } from './indexer/dispatch.js';
 import { startIndexer } from './indexer/worker.js';
 import { buildServer } from './server.js';
