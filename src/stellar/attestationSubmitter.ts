@@ -8,6 +8,7 @@ import {
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
 
+import { withRetry } from '../lib/retry.js';
 import { rpcServer } from './rpc.js';
 
 const MILESTONE_VAULT_CONTRACT_ID = process.env.MILESTONE_VAULT_CONTRACT_ID;
@@ -41,8 +42,12 @@ export async function submitAttestation(projectId: bigint): Promise<string> {
   }
 
   const attestorKeypair = Keypair.fromSecret(ATTESTOR_SECRET_KEY);
-  const account = await rpcServer.getAccount(attestorKeypair.publicKey());
   const contract = new Contract(MILESTONE_VAULT_CONTRACT_ID);
+
+  // Fetching the account and simulating the call are both read-only — safe
+  // to retry on a transient RPC failure with no risk of double-submitting
+  // anything.
+  const account = await withRetry(() => rpcServer.getAccount(attestorKeypair.publicKey()));
 
   const transaction = new TransactionBuilder(account, {
     fee: BASE_FEE,
@@ -52,9 +57,13 @@ export async function submitAttestation(projectId: bigint): Promise<string> {
     .setTimeout(30)
     .build();
 
-  const prepared = await rpcServer.prepareTransaction(transaction);
+  const prepared = await withRetry(() => rpcServer.prepareTransaction(transaction));
   prepared.sign(attestorKeypair);
 
+  // Deliberately not retried: if the network drops the response after the
+  // node has already accepted the transaction, resending would submit a
+  // second `attest_milestone` call and double-attest the project. A
+  // send-level failure here has to surface to the caller instead.
   const sendResult = await rpcServer.sendTransaction(prepared);
   if (sendResult.status !== 'PENDING') {
     throw new Error(`attest_milestone submission was rejected: ${sendResult.status}`);
@@ -65,7 +74,9 @@ export async function submitAttestation(projectId: bigint): Promise<string> {
 
 async function pollForPayout(hash: string): Promise<string> {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    const result = await rpcServer.getTransaction(hash);
+    // Checking the status of an already-submitted transaction is
+    // read-only, so a transient failure here is always safe to retry.
+    const result = await withRetry(() => rpcServer.getTransaction(hash));
 
     if (result.status === 'SUCCESS') {
       return result.returnValue ? scValToNative(result.returnValue).toString() : '0';

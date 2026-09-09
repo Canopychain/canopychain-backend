@@ -1,3 +1,5 @@
+import { withRetry } from '../lib/retry.js';
+
 const GFW_API_BASE_URL = process.env.GFW_API_BASE_URL ?? 'https://data-api.globalforestwatch.org';
 const GFW_API_KEY = process.env.GFW_API_KEY;
 
@@ -29,18 +31,24 @@ export async function queryDataset<T = Record<string, unknown>>(
     throw new Error('GFW_API_KEY is not set');
   }
 
-  const response = await fetch(`${GFW_API_BASE_URL}/dataset/${dataset}/${version}/query/json`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': GFW_API_KEY,
-    },
-    body: JSON.stringify({ sql, geometry }),
+  // A dataset query is read-only and deterministic for the same inputs,
+  // so retrying it on a transient failure (rate limit, dropped
+  // connection) is always safe — unlike a transaction submission, there's
+  // no risk of "did that already happen?" here.
+  return withRetry(async () => {
+    const response = await fetch(`${GFW_API_BASE_URL}/dataset/${dataset}/${version}/query/json`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': GFW_API_KEY,
+      },
+      body: JSON.stringify({ sql, geometry }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GFW query failed: ${response.status} ${await response.text()}`);
+    }
+
+    return (await response.json()) as GfwQueryResult<T>;
   });
-
-  if (!response.ok) {
-    throw new Error(`GFW query failed: ${response.status} ${await response.text()}`);
-  }
-
-  return (await response.json()) as GfwQueryResult<T>;
 }
