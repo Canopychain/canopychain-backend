@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 
 import { prisma } from './db.js';
+import { projectRoutes } from './routes/projects.js';
 
 export function buildServer() {
   const app = Fastify({ logger: true });
@@ -9,6 +10,8 @@ export function buildServer() {
     await prisma.$queryRaw`SELECT 1`;
     return { status: 'ok' };
   });
+
+  app.register(projectRoutes);
 
   return app;
 }
