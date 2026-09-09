@@ -1,2 +1,9 @@
-// Server entry point. Replaced with a real Fastify server in a later commit.
-console.log('canopychain-backend: scaffold placeholder');
+import { buildServer } from './server.js';
+
+const port = Number(process.env.PORT ?? 3000);
+const app = buildServer();
+
+app.listen({ port, host: '0.0.0.0' }).catch((err) => {
+  app.log.error(err);
+  process.exit(1);
+});
