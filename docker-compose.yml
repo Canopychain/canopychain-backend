@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: canopychain
+      POSTGRES_PASSWORD: canopychain
+      POSTGRES_DB: canopychain
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U canopychain']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's DATABASE_URL: inside the compose network the
+      # database is reachable at the service name, not localhost.
+      DATABASE_URL: postgresql://canopychain:canopychain@postgres:5432/canopychain
+    ports:
+      - '3000:3000'
+    # db push, not migrate deploy: no migration files exist yet. Fine for
+    # local dev; a real deploy would use versioned migrations instead.
+    command: sh -c "npx prisma db push && npm start"
+
+volumes:
+  postgres-data:
