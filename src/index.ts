@@ -1,3 +1,4 @@
+import { dispatchEvent } from './indexer/dispatch.js';
 import { startIndexer } from './indexer/worker.js';
 import { buildServer } from './server.js';
 
@@ -9,8 +10,7 @@ app.listen({ port, host: '0.0.0.0' }).catch((err) => {
   process.exit(1);
 });
 
-// Handlers for each event type land in upcoming commits; for now this just
-// confirms events are actually flowing from the RPC node.
-startIndexer(async (event) => {
-  app.log.info({ event }, 'received contract event');
-});
+// Left unwrapped so a handler failure propagates: worker.ts's own catch
+// logs it and, crucially, leaves the checkpoint unadvanced so the failed
+// event gets retried on the next poll instead of silently skipped.
+startIndexer(dispatchEvent);
