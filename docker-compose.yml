@@ -29,9 +29,11 @@ services:
       DATABASE_URL: postgresql://canopychain:canopychain@postgres:5432/canopychain
     ports:
       - '3000:3000'
-    # db push, not migrate deploy: no migration files exist yet. Fine for
-    # local dev; a real deploy would use versioned migrations instead.
-    command: sh -c "npx prisma db push && npm start"
+    # No `prisma db push` on boot here anymore: the production image
+    # deliberately omits the prisma CLI (see Dockerfile). Sync the schema
+    # from the host once instead — `npm run db:push` against
+    # postgresql://canopychain:canopychain@localhost:5432/canopychain —
+    # before starting this service.
 
 volumes:
   postgres-data:
