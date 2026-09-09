@@ -40,6 +40,10 @@ model Project {
   polygonHash    String?           @map("polygon_hash")
   approved       Boolean           @default(false)
   cancelled      Boolean           @default(false)
+  /// Set by an admin rejecting a not-yet-approved project — there's no
+  /// on-chain "reject", only "approve", so a project an admin declines
+  /// never gets an on-chain registry entry activated in the first place.
+  reviewNote     String?           @map("review_note")
   /// i128 values mirrored from the milestone-vault contract, stored as
   /// decimal strings to avoid precision loss.
   totalDeposited String            @default("0") @map("total_deposited")
