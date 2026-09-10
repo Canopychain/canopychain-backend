@@ -101,6 +101,44 @@ describe('admin project review', () => {
     await app.close();
   });
 
+  it('GET /projects/all lists every project regardless of status', async () => {
+    const app = buildServer();
+    const headers = signAdminRequest(adminKeypair, 'GET', '/projects/all');
+
+    await prisma.project.create({
+      data: { onChainId: 1n, operatorAddress: fakeAddress('A'), name: 'Pending', approved: false },
+    });
+    await prisma.project.create({
+      data: { onChainId: 2n, operatorAddress: fakeAddress('B'), name: 'Approved', approved: true },
+    });
+    await prisma.project.create({
+      data: {
+        onChainId: 3n,
+        operatorAddress: fakeAddress('C'),
+        name: 'Cancelled',
+        approved: true,
+        cancelled: true,
+      },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/projects/all', headers });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(3);
+    expect(body[0].onChainId).toBe('3'); // serialized as a string, not a raw BigInt
+
+    await app.close();
+  });
+
+  it('GET /projects/all rejects an unsigned request with 401', async () => {
+    const app = buildServer();
+
+    const response = await app.inject({ method: 'GET', url: '/projects/all' });
+    expect(response.statusCode).toBe(401);
+
+    await app.close();
+  });
+
   it('rejects a signature for a different URL than the one requested', async () => {
     const app = buildServer();
 

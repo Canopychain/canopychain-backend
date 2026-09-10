@@ -47,6 +47,20 @@ export const projectAdminRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
+  // Distinct from GET /projects (approved-only, public) and
+  // GET /projects/pending (unapproved-only): this is the full oversight
+  // view — every project regardless of status — so an admin can rotate an
+  // attestor or cancel a project that's already active, not just review
+  // ones still awaiting approval.
+  app.get('/projects/all', { preHandler: requireAdminSignature }, async () => {
+    const projects = await prisma.project.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return projects.map(serializeProject);
+  });
+
   // There's no on-chain "reject" — only "approve" — so approving a project
   // means an admin calling milestone-vault's approve_project directly
   // (mirrored back into `approved` by the indexer once that lands, not by
