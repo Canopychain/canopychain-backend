@@ -11,6 +11,7 @@ import {
 
 import { prisma } from './db.js';
 import { gfwStatusRoutes } from './routes/gfwStatus.js';
+import { donationRoutes } from './routes/donations.js';
 import { projectAdminRoutes } from './routes/projectAdmin.js';
 import { projectRegistrationRoutes } from './routes/projectRegistration.js';
 import { projectRoutes } from './routes/projects.js';
@@ -76,6 +77,7 @@ export function buildServer() {
   app.register(projectRegistrationRoutes);
   app.register(projectAdminRoutes);
   app.register(gfwStatusRoutes);
+  app.register(donationRoutes);
 
   return app;
 }
