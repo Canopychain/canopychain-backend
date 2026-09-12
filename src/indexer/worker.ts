@@ -13,7 +13,9 @@ export type EventHandler = (event: ContractEvent) => Promise<void>;
 // the `indexer_checkpoints` row, written after every processed event.
 let lastProcessedLedger: number | undefined;
 
-async function pollOnce(handleEvent: EventHandler): Promise<void> {
+/** Exported so tests can drive a single poll iteration directly, rather
+ * than going through startIndexer's setInterval. */
+export async function pollOnce(handleEvent: EventHandler): Promise<void> {
   if (WATCHED_CONTRACT_IDS.length === 0) {
     return;
   }
