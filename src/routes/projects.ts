@@ -10,9 +10,14 @@ function serializeProject<T extends { onChainId: bigint }>(project: T) {
 }
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/projects', async () => {
+  app.get('/projects', async (request) => {
+    const { name } = request.query as { name?: string };
+
     const projects = await prisma.project.findMany({
-      where: { approved: true },
+      where: {
+        approved: true,
+        ...(name ? { name: { contains: name, mode: 'insensitive' as const } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
