@@ -9,8 +9,9 @@ export function signAdminRequest(
   keypair: Keypair,
   method: string,
   url: string,
+  timestampMs: number = Date.now(),
 ): Record<string, string> {
-  const timestamp = Date.now().toString();
+  const timestamp = timestampMs.toString();
   const payload = `${method}:${url}:${timestamp}`;
   const signature = keypair.sign(sep53Hash(payload)).toString('base64');
 
