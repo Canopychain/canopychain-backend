@@ -29,6 +29,54 @@ describe('GET /projects', () => {
 
     await app.close();
   });
+
+  it('filters by a case-insensitive, partial match on name', async () => {
+    const app = buildServer();
+
+    await prisma.project.create({
+      data: { onChainId: 10n, operatorAddress: fakeAddress('E'), name: 'Amazon Reforestation', approved: true },
+    });
+    await prisma.project.create({
+      data: { onChainId: 11n, operatorAddress: fakeAddress('F'), name: 'Congo Basin Watch', approved: true },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/projects?name=amazon' });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].name).toBe('Amazon Reforestation');
+
+    await app.close();
+  });
+
+  it('excludes unapproved projects from a name-filtered search', async () => {
+    const app = buildServer();
+
+    await prisma.project.create({
+      data: { onChainId: 12n, operatorAddress: fakeAddress('G'), name: 'Amazon Basin', approved: false },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/projects?name=amazon' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(0);
+
+    await app.close();
+  });
+
+  it('returns an empty list when no project name matches', async () => {
+    const app = buildServer();
+
+    await prisma.project.create({
+      data: { onChainId: 13n, operatorAddress: fakeAddress('H'), name: 'Amazon Basin', approved: true },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/projects?name=nonexistent' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(0);
+
+    await app.close();
+  });
 });
 
 describe('GET /projects/:id', () => {

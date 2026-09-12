@@ -89,6 +89,18 @@ describe('admin project review', () => {
     await app.close();
   });
 
+  it('rejects a correctly signed request whose timestamp is stale', async () => {
+    const app = buildServer();
+    const sixMinutesAgo = Date.now() - 6 * 60 * 1000;
+    const headers = signAdminRequest(adminKeypair, 'GET', '/projects/pending', sixMinutesAgo);
+
+    const response = await app.inject({ method: 'GET', url: '/projects/pending', headers });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('stale_signature');
+
+    await app.close();
+  });
+
   it('rejects a signature for a different URL than the one requested', async () => {
     const app = buildServer();
 
