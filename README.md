@@ -31,6 +31,12 @@ npm run db:push:test
 npm test
 ```
 
+## Indexer
+
+Which contract events the indexer consumes, which tables/columns each one
+writes, and which events it deliberately ignores: see
+[docs/indexer-event-mapping.md](./docs/indexer-event-mapping.md).
+
 ## API documentation
 
 Route schemas are the source of truth for the REST API — an OpenAPI 3
