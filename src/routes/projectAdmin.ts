@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
@@ -14,16 +14,29 @@ function serializeProject<T extends { onChainId: bigint }>(project: T) {
   return { ...project, onChainId: project.onChainId.toString() };
 }
 
-export async function projectAdminRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/projects/pending', { preHandler: requireAdminSignature }, async () => {
-    const projects = await prisma.project.findMany({
-      where: { approved: false, cancelled: false },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+export const projectAdminRoutes: FastifyPluginAsyncZod = async (app) => {
+  app.get(
+    '/projects/pending',
+    {
+      preHandler: requireAdminSignature,
+      schema: {
+        summary: 'List projects awaiting admin approval',
+        description:
+          'Requires a SEP-53 admin signature: x-admin-address, x-admin-signature, and ' +
+          'x-admin-timestamp headers. Not schema-validated here — an invalid/missing ' +
+          'signature is a 401 from the admin-auth preHandler, not a schema 400.',
+      },
+    },
+    async () => {
+      const projects = await prisma.project.findMany({
+        where: { approved: false, cancelled: false },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
 
-    return projects.map(serializeProject);
-  });
+      return projects.map(serializeProject);
+    },
+  );
 
   // There's no on-chain "reject" — only "approve" — so approving a project
   // means an admin calling milestone-vault's approve_project directly
@@ -34,18 +47,28 @@ export async function projectAdminRoutes(app: FastifyInstance): Promise<void> {
   // place.
   app.post(
     '/projects/:id/reject',
-    { preHandler: requireAdminSignature },
+    {
+      preHandler: requireAdminSignature,
+      schema: {
+        summary: 'Reject a pending project',
+        description:
+          'Requires a SEP-53 admin signature: x-admin-address, x-admin-signature, and ' +
+          'x-admin-timestamp headers. Not schema-validated here — an invalid/missing ' +
+          'signature is a 401 from the admin-auth preHandler, not a schema 400.',
+        params: z.object({ id: z.string() }),
+        body: reviewBodySchema.optional(),
+        response: {
+          404: z.object({ error: z.literal('not_found') }),
+        },
+      },
+    },
     async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const parsed = reviewBodySchema.safeParse(request.body ?? {});
-      if (!parsed.success) {
-        return reply.code(400).send({ error: 'invalid_request', details: parsed.error.flatten() });
-      }
+      const { id } = request.params;
 
       try {
         const project = await prisma.project.update({
           where: { id },
-          data: { cancelled: true, reviewNote: parsed.data.reviewNote },
+          data: { cancelled: true, reviewNote: request.body?.reviewNote },
         });
         return serializeProject(project);
       } catch {
@@ -53,4 +76,4 @@ export async function projectAdminRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
-}
+};
