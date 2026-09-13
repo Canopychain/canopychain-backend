@@ -10,6 +10,7 @@ import {
 } from 'fastify-type-provider-zod';
 
 import { prisma } from './db.js';
+import { gfwStatusRoutes } from './routes/gfwStatus.js';
 import { projectAdminRoutes } from './routes/projectAdmin.js';
 import { projectRegistrationRoutes } from './routes/projectRegistration.js';
 import { projectRoutes } from './routes/projects.js';
@@ -74,6 +75,7 @@ export function buildServer() {
   app.register(projectRoutes);
   app.register(projectRegistrationRoutes);
   app.register(projectAdminRoutes);
+  app.register(gfwStatusRoutes);
 
   return app;
 }

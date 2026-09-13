@@ -40,6 +40,15 @@ model Project {
   polygonHash    String?           @map("polygon_hash")
   approved       Boolean           @default(false)
   cancelled      Boolean           @default(false)
+  /// Consecutive GFW poll failures for this project's polygon, reset to 0
+  /// on the next successful poll. Drives the backoff below so a project
+  /// that can never succeed (malformed geometry, uncovered area) doesn't
+  /// burn retry budget and API quota on every pass forever.
+  gfwConsecutiveFailures Int       @default(0) @map("gfw_consecutive_failures")
+  /// Set on failure to `now + backoff`; the poll worker skips this project
+  /// until then instead of retrying it in full on every pass. Null means
+  /// "poll normally" — either it's never failed, or it just succeeded.
+  gfwNextPollAt  DateTime?         @map("gfw_next_poll_at")
   /// Set by an admin rejecting a not-yet-approved project — there's no
   /// on-chain "reject", only "approve", so a project an admin declines
   /// never gets an on-chain registry entry activated in the first place.

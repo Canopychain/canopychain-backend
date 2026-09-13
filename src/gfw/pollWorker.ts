@@ -1,8 +1,21 @@
 import { prisma } from '../db.js';
 import { queryDataset, type GfwPolygonGeometry } from './client.js';
 import { computeForestCoverChange, type ForestCoverSample } from './forestCoverChange.js';
+import {
+  markPollRunCompleted,
+  markPollRunStarted,
+  markPollWorkerStarted,
+  markPollWorkerStopped,
+} from './pollStatus.js';
 
 const POLL_INTERVAL_MS = Number(process.env.GFW_POLL_INTERVAL_MS ?? 6 * 60 * 60 * 1000); // 6h default — satellite layers don't refresh faster than that
+
+// A project whose polygon can never succeed at GFW (malformed geometry, an
+// area the dataset doesn't cover) would otherwise be retried in full on
+// every pass, forever. Doubling the skip period per consecutive failure —
+// capped here — keeps such a project from burning retry budget and API
+// quota while the rest of the batch keeps its normal cadence.
+const MAX_BACKOFF_MS = Number(process.env.GFW_MAX_BACKOFF_MS ?? 7 * 24 * 60 * 60 * 1000); // 7 days
 
 const FOREST_CANOPY_DENSITY_THRESHOLD = 30;
 const TREE_COVER_LOSS_DATASET = 'umd_tree_cover_loss';
@@ -83,26 +96,56 @@ async function pollProject(project: {
 }
 
 async function pollOnce(): Promise<void> {
+  const now = new Date();
   const activeProjects = await prisma.project.findMany({
-    where: { approved: true, cancelled: false },
+    where: {
+      approved: true,
+      cancelled: false,
+      OR: [{ gfwNextPollAt: null }, { gfwNextPollAt: { lte: now } }],
+    },
   });
 
   for (const project of activeProjects) {
     try {
       await pollProject(project);
+      if (project.gfwConsecutiveFailures > 0) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { gfwConsecutiveFailures: 0, gfwNextPollAt: null },
+        });
+      }
     } catch (err) {
       console.error(`GFW poll failed for project ${project.id}`, err);
+
+      const consecutiveFailures = project.gfwConsecutiveFailures + 1;
+      const backoffMs = Math.min(POLL_INTERVAL_MS * 2 ** (consecutiveFailures - 1), MAX_BACKOFF_MS);
+      await prisma.project.update({
+        where: { id: project.id },
+        data: {
+          gfwConsecutiveFailures: consecutiveFailures,
+          gfwNextPollAt: new Date(Date.now() + backoffMs),
+        },
+      });
     }
   }
 }
 
 /** Starts polling active projects against GFW on an interval. Returns a stop function. */
 export function startForestCoverPolling(): () => void {
+  markPollWorkerStarted();
+
   const interval = setInterval(() => {
-    pollOnce().catch((err: unknown) => {
-      console.error('forest-cover poll failed', err);
-    });
+    markPollRunStarted();
+    pollOnce()
+      .then(() => markPollRunCompleted(null))
+      .catch((err: unknown) => {
+        console.error('forest-cover poll failed', err);
+        markPollRunCompleted(err);
+      });
   }, POLL_INTERVAL_MS);
 
-  return () => clearInterval(interval);
+  return () => {
+    clearInterval(interval);
+    markPollWorkerStopped();
+  };
 }
