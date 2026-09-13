@@ -1,6 +1,12 @@
 import { prisma } from '../db.js';
 import { queryDataset, type GfwPolygonGeometry } from './client.js';
 import { computeForestCoverChange, type ForestCoverSample } from './forestCoverChange.js';
+import {
+  markPollRunCompleted,
+  markPollRunStarted,
+  markPollWorkerStarted,
+  markPollWorkerStopped,
+} from './pollStatus.js';
 
 const POLL_INTERVAL_MS = Number(process.env.GFW_POLL_INTERVAL_MS ?? 6 * 60 * 60 * 1000); // 6h default — satellite layers don't refresh faster than that
 
@@ -126,11 +132,20 @@ async function pollOnce(): Promise<void> {
 
 /** Starts polling active projects against GFW on an interval. Returns a stop function. */
 export function startForestCoverPolling(): () => void {
+  markPollWorkerStarted();
+
   const interval = setInterval(() => {
-    pollOnce().catch((err: unknown) => {
-      console.error('forest-cover poll failed', err);
-    });
+    markPollRunStarted();
+    pollOnce()
+      .then(() => markPollRunCompleted(null))
+      .catch((err: unknown) => {
+        console.error('forest-cover poll failed', err);
+        markPollRunCompleted(err);
+      });
   }, POLL_INTERVAL_MS);
 
-  return () => clearInterval(interval);
+  return () => {
+    clearInterval(interval);
+    markPollWorkerStopped();
+  };
 }
