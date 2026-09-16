@@ -54,6 +54,16 @@ is running.
 
 Early development.
 
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](./CONTRIBUTING.md)
+covers the toolchain and the checks CI runs, and
+[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) covers how we expect people to
+treat each other here.
+
+Security vulnerabilities should be reported privately rather than in a public
+issue. [SECURITY.md](./SECURITY.md) explains how.
+
 ## License
 
 Apache-2.0 — see [LICENSE](./LICENSE).
