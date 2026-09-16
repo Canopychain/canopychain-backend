@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { prisma } from '../db.js';
 import { requireAdminSignature } from '../middleware/adminAuth.js';
+import { projectSchema } from './projects.js';
 
 const reviewBodySchema = z.object({
   reviewNote: z.string().max(2000).optional(),
@@ -10,8 +11,16 @@ const reviewBodySchema = z.object({
 
 // onChainId is a BigInt; Fastify's default JSON.stringify serializer
 // throws on BigInt, so it has to go out as a string.
-function serializeProject<T extends { onChainId: bigint }>(project: T) {
-  return { ...project, onChainId: project.onChainId.toString() };
+function serializeProject<T extends { onChainId: bigint; polygonGeoJson: unknown }>(
+  project: T,
+) {
+  return {
+    ...project,
+    onChainId: project.onChainId.toString(),
+    // prisma types a Json? column as any json value, including scalars, but
+    // registration validates this as a geojson geometry before it's stored.
+    polygonGeoJson: project.polygonGeoJson as Record<string, unknown> | null,
+  };
 }
 
 export const projectAdminRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -58,6 +67,7 @@ export const projectAdminRoutes: FastifyPluginAsyncZod = async (app) => {
         params: z.object({ id: z.string() }),
         body: reviewBodySchema.optional(),
         response: {
+          200: projectSchema,
           404: z.object({ error: z.literal('not_found') }),
         },
       },

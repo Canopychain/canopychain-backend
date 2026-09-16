@@ -6,11 +6,19 @@ import { prisma } from '../db.js';
 // onChainId is a BigInt; the response schemas below type it as a string
 // (Prisma's BigInt has no JSON representation of its own), so it has to be
 // converted before the zod serializer sees it.
-function serializeProject<T extends { onChainId: bigint }>(project: T) {
-  return { ...project, onChainId: project.onChainId.toString() };
+function serializeProject<T extends { onChainId: bigint; polygonGeoJson: unknown }>(
+  project: T,
+) {
+  return {
+    ...project,
+    onChainId: project.onChainId.toString(),
+    // prisma types a Json? column as any json value, including scalars, but
+    // registration validates this as a geojson geometry before it's stored.
+    polygonGeoJson: project.polygonGeoJson as Record<string, unknown> | null,
+  };
 }
 
-const projectSchema = z.object({
+export const projectSchema = z.object({
   id: z.string(),
   onChainId: z.string().describe('The on-chain project id, shared by project-registry and milestone-vault.'),
   operatorAddress: z.string(),
