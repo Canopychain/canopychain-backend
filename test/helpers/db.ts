@@ -1,3 +1,5 @@
+import { StrKey } from '@stellar/stellar-sdk';
+
 import { prisma } from '../../src/db.js';
 
 /** Truncates every table. Call between tests so fixtures never leak across them. */
@@ -11,11 +13,12 @@ export async function resetDb(): Promise<void> {
 }
 
 /**
- * A syntactically valid-looking (not checksum-valid) Stellar G-address —
- * matches the `^G[A-Z2-7]{55}$` shape a real address takes, without
- * needing a real keypair. `distinguishingChar` must be one letter (A-Z) so
- * distinct fixtures produce distinct addresses.
+ * A real, checksum-valid Stellar G-address derived deterministically from
+ * `distinguishingChar`, so distinct fixtures get distinct addresses. It has
+ * to be properly encoded rather than a repeated character: the SDK's
+ * Address parser validates the checksum and rejects anything else.
  */
 export function fakeAddress(distinguishingChar: string): string {
-  return `G${distinguishingChar.toUpperCase().repeat(55)}`;
+  const seed = Buffer.alloc(32, distinguishingChar.toUpperCase().charCodeAt(0));
+  return StrKey.encodeEd25519PublicKey(seed);
 }

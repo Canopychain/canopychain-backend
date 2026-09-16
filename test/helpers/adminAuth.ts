@@ -13,7 +13,9 @@ export function signAdminRequest(
 ): Record<string, string> {
   const timestamp = timestampMs.toString();
   const payload = `${method}:${url}:${timestamp}`;
-  const signature = keypair.sign(sep53Hash(payload)).toString('base64');
+  // sign() returns a Uint8Array, not a Buffer — calling .toString('base64')
+  // on it straight would give comma-separated digits, not base64.
+  const signature = Buffer.from(keypair.sign(sep53Hash(payload))).toString('base64');
 
   return {
     'x-admin-address': keypair.publicKey(),
