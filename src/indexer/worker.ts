@@ -1,3 +1,4 @@
+import { logger } from '../logger.js';
 import { getLatestLedgerSequence, rpcServer } from '../stellar/rpc.js';
 import { getCheckpoint, saveCheckpoint } from './checkpoint.js';
 import { WATCHED_CONTRACT_IDS } from './contracts.js';
@@ -58,7 +59,7 @@ export async function pollOnce(handleEvent: EventHandler): Promise<void> {
 export function startIndexer(handleEvent: EventHandler): () => void {
   const interval = setInterval(() => {
     pollOnce(handleEvent).catch((err: unknown) => {
-      console.error('indexer poll failed', err);
+      logger.error({ err }, 'indexer poll failed');
     });
   }, POLL_INTERVAL_MS);
 

@@ -1,4 +1,10 @@
 import { prisma } from '../db.js';
+import { logger } from '../logger.js';
+import {
+  DEFAULT_MAX_OBSERVATION_GAP_SECONDS,
+  evaluateMilestones,
+} from '../milestones/evaluator.js';
+import { submitAttestation } from '../stellar/attestationSubmitter.js';
 import { queryDataset, type GfwPolygonGeometry } from './client.js';
 import { computeForestCoverChange, type ForestCoverSample } from './forestCoverChange.js';
 import {
@@ -9,6 +15,14 @@ import {
 } from './pollStatus.js';
 
 const POLL_INTERVAL_MS = Number(process.env.GFW_POLL_INTERVAL_MS ?? 6 * 60 * 60 * 1000); // 6h default — satellite layers don't refresh faster than that
+
+// How long a hole in a project's check history can be before it stops
+// counting as continuous compliance. Overridable because it only makes
+// sense relative to the poll interval: shorten the interval for a demo and
+// this wants shortening with it.
+const MAX_OBSERVATION_GAP_SECONDS = Number(
+  process.env.GFW_MAX_OBSERVATION_GAP_SECONDS ?? DEFAULT_MAX_OBSERVATION_GAP_SECONDS,
+);
 
 // A project whose polygon can never succeed at GFW (malformed geometry, an
 // area the dataset doesn't cover) would otherwise be retried in full on
@@ -83,8 +97,96 @@ async function fetchForestCoverMeasurement(
   };
 }
 
+/**
+ * Evaluates a project's schedule against its recorded checks and, when the
+ * next pending milestone has been earned, attests it on-chain.
+ *
+ * Marking the milestone attested locally as soon as the transaction
+ * finalises is deliberate rather than waiting for the indexer to mirror
+ * the event: otherwise the next poll would still see the milestone
+ * `PENDING` and submit a second attestation, which the vault would apply
+ * to the *following* tranche — releasing it early. A crash in the window
+ * between the transaction finalising and this write would still allow
+ * that, which is why the submitter waits for finalisation rather than
+ * firing and forgetting; closing the window completely needs a read of
+ * the vault's own `milestones_completed` before submitting.
+ */
+async function evaluateAndAttest(project: { id: string; onChainId: bigint }): Promise<void> {
+  const milestones = await prisma.milestone.findMany({
+    where: { projectId: project.id },
+    orderBy: { index: 'asc' },
+  });
+
+  if (milestones.length === 0) {
+    return;
+  }
+
+  // Nothing older than the longest sustain period (plus the gap tolerance)
+  // can change the verdict, so the history fetched is bounded by it rather
+  // than growing with the project's age. A streak longer than that window
+  // gets its `sustainedSeconds` reported as the window length, which is
+  // still past every milestone's requirement — so this can understate the
+  // figure shown, never the readiness decision.
+  const longestSustainSeconds = Math.max(...milestones.map((m) => m.sustainSeconds));
+  const windowStart = new Date(
+    Date.now() - (longestSustainSeconds + MAX_OBSERVATION_GAP_SECONDS) * 1000,
+  );
+
+  const observations = await prisma.forestCoverSnapshot.findMany({
+    where: { projectId: project.id, checkedAt: { gte: windowStart } },
+    orderBy: { checkedAt: 'desc' },
+    select: { retentionBps: true, checkedAt: true },
+  });
+
+  const { readyToAttest, progress } = evaluateMilestones({
+    milestones: milestones.map((milestone) => ({
+      index: milestone.index,
+      retentionFloorBps: milestone.retentionFloorBps,
+      sustainSeconds: milestone.sustainSeconds,
+      status: milestone.status,
+    })),
+    observations,
+    maxObservationGapSeconds: MAX_OBSERVATION_GAP_SECONDS,
+  });
+
+  if (!readyToAttest) {
+    if (progress) {
+      logger.debug(
+        {
+          projectId: project.id,
+          milestoneIndex: progress.milestone.index,
+          currentRetentionBps: progress.currentRetentionBps,
+          sustainedSeconds: progress.sustainedSeconds,
+          requiredSeconds: progress.milestone.sustainSeconds,
+        },
+        'milestone not yet earned',
+      );
+    }
+    return;
+  }
+
+  const payoutAmount = await submitAttestation(project.onChainId);
+
+  await prisma.milestone.updateMany({
+    where: { projectId: project.id, index: readyToAttest.index, status: 'PENDING' },
+    data: { status: 'ATTESTED', attestedAt: new Date(), payoutAmount },
+  });
+
+  logger.info(
+    {
+      projectId: project.id,
+      milestoneIndex: readyToAttest.index,
+      retentionFloorBps: readyToAttest.retentionFloorBps,
+      sustainedSeconds: progress?.sustainedSeconds,
+      payoutAmount,
+    },
+    'milestone attested and tranche released',
+  );
+}
+
 async function pollProject(project: {
   id: string;
+  onChainId: bigint;
   polygonGeoJson: unknown;
 }): Promise<void> {
   const previousSnapshot = await prisma.forestCoverSnapshot.findFirst({
@@ -111,6 +213,8 @@ async function pollProject(project: {
       changeBps,
     },
   });
+
+  await evaluateAndAttest(project);
 }
 
 async function pollOnce(): Promise<void> {
@@ -133,7 +237,7 @@ async function pollOnce(): Promise<void> {
         });
       }
     } catch (err) {
-      console.error(`GFW poll failed for project ${project.id}`, err);
+      logger.error({ err, projectId: project.id }, 'GFW poll failed for project');
 
       const consecutiveFailures = project.gfwConsecutiveFailures + 1;
       const backoffMs = Math.min(POLL_INTERVAL_MS * 2 ** (consecutiveFailures - 1), MAX_BACKOFF_MS);
@@ -157,7 +261,7 @@ export function startForestCoverPolling(): () => void {
     pollOnce()
       .then(() => markPollRunCompleted(null))
       .catch((err: unknown) => {
-        console.error('forest-cover poll failed', err);
+        logger.error({ err }, 'forest-cover poll failed');
         markPollRunCompleted(err);
       });
   }, POLL_INTERVAL_MS);
