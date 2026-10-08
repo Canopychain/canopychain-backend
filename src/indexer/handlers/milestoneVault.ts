@@ -101,6 +101,10 @@ type EmittedMilestone = {
   payout_bps: number;
 };
 
+/** The largest value `Milestone.sustainSeconds` can hold: Postgres `int4`,
+ * which is ~68 years. */
+const MAX_SUSTAIN_SECONDS = 2_147_483_647;
+
 /**
  * The schedule event carries every tranche, so the milestone rows are built
  * from it directly rather than read back from the contract.
@@ -135,7 +139,12 @@ async function handleSchedule(event: ContractEvent): Promise<void> {
     // seconds is ~68 years, so rejecting is the honest response to a value
     // past it rather than truncating into a schedule that looks achievable
     // and isn't. See the schema comment on Milestone.sustainSeconds.
-    if (milestone.sustain_seconds > BigInt(Number.MAX_SAFE_INTEGER)) {
+    //
+    // The bound is the column's, not JavaScript's: a value between 2^31
+    // and 2^53 is representable as a number but not storable, and letting
+    // it through means failing on the insert with a Postgres range error
+    // instead of saying what's actually wrong.
+    if (milestone.sustain_seconds > BigInt(MAX_SUSTAIN_SECONDS)) {
       throw new Error(
         `schedule for project ${onChainId} has a sustain period beyond the supported range`,
       );
