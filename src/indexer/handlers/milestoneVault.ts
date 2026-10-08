@@ -1,6 +1,7 @@
 import { scValToNative } from '@stellar/stellar-sdk';
 
 import { prisma } from '../../db.js';
+import { logger } from '../../logger.js';
 import type { ContractEvent } from '../worker.js';
 
 async function ensureDonor(address: string) {
@@ -91,6 +92,70 @@ async function handleAttested(event: ContractEvent): Promise<void> {
   ]);
 }
 
+/** A milestone as it decodes out of the contract's event payload: a
+ * `contracttype` struct keeps its Rust field names, and `u64` arrives as a
+ * bigint while `u32` arrives as a number. */
+type EmittedMilestone = {
+  retention_floor_bps: number;
+  sustain_seconds: bigint;
+  payout_bps: number;
+};
+
+/**
+ * The schedule event carries every tranche, so the milestone rows are built
+ * from it directly rather than read back from the contract.
+ *
+ * Replacing the existing rows wholesale is safe because the contract only
+ * allows reconfiguring a schedule while the project has no vault, a vault
+ * only exists once someone has deposited, and attesting pays out of that
+ * vault — so a second schedule event cannot arrive after an attestation.
+ * The attested-row guard below is belt and braces against a replayed or
+ * out-of-order event rather than something the contract permits.
+ */
+async function handleSchedule(event: ContractEvent): Promise<void> {
+  const [, projectIdVal] = event.topic;
+  const onChainId = scValToNative(projectIdVal) as bigint;
+  const emitted = scValToNative(event.value) as EmittedMilestone[];
+
+  const project = await ensureProject(onChainId);
+
+  const attestedCount = await prisma.milestone.count({
+    where: { projectId: project.id, status: 'ATTESTED' },
+  });
+  if (attestedCount > 0) {
+    logger.warn(
+      { projectId: project.id, onChainId: onChainId.toString() },
+      'ignoring a schedule event for a project that already has attested milestones',
+    );
+    return;
+  }
+
+  const milestones = emitted.map((milestone, index) => {
+    // sustain_seconds is u64 on-chain and Int in the database — 2^31
+    // seconds is ~68 years, so rejecting is the honest response to a value
+    // past it rather than truncating into a schedule that looks achievable
+    // and isn't. See the schema comment on Milestone.sustainSeconds.
+    if (milestone.sustain_seconds > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(
+        `schedule for project ${onChainId} has a sustain period beyond the supported range`,
+      );
+    }
+
+    return {
+      projectId: project.id,
+      index,
+      retentionFloorBps: milestone.retention_floor_bps,
+      sustainSeconds: Number(milestone.sustain_seconds),
+      payoutBps: milestone.payout_bps,
+    };
+  });
+
+  await prisma.$transaction([
+    prisma.milestone.deleteMany({ where: { projectId: project.id } }),
+    prisma.milestone.createMany({ data: milestones }),
+  ]);
+}
+
 export async function handleMilestoneVaultEvent(event: ContractEvent): Promise<void> {
   const [topicSymbol] = event.topic;
   const topic = scValToNative(topicSymbol) as string;
@@ -99,13 +164,15 @@ export async function handleMilestoneVaultEvent(event: ContractEvent): Promise<v
     case 'deposit':
       await handleDeposit(event);
       break;
+    case 'schedule':
+      await handleSchedule(event);
+      break;
     case 'attested':
       await handleAttested(event);
       break;
     default:
-      // schedule, pause, unpause, attestor, cancelled, refund —
-      // deliberately unhandled for now: none of them are needed for the
-      // donor-facing explorer or milestone timeline yet.
+      // pause, unpause, attestor, cancelled, refund — still unhandled;
+      // tracked as their own issues.
       break;
   }
 }

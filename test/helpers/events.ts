@@ -32,6 +32,29 @@ export function vecScVal(items: xdr.ScVal[]): xdr.ScVal {
   return xdr.ScVal.scvVec(items);
 }
 
+/** Builds a `Milestone` struct the way the contract encodes one — a map
+ * keyed by the Rust field names, with each field's own on-chain type. */
+export function milestoneScVal(
+  retentionFloorBps: number,
+  sustainSeconds: number | bigint,
+  payoutBps: number,
+): xdr.ScVal {
+  return nativeToScVal(
+    {
+      retention_floor_bps: retentionFloorBps,
+      sustain_seconds: BigInt(sustainSeconds),
+      payout_bps: payoutBps,
+    },
+    {
+      type: {
+        retention_floor_bps: ['symbol', 'u32'],
+        sustain_seconds: ['symbol', 'u64'],
+        payout_bps: ['symbol', 'u32'],
+      },
+    },
+  );
+}
+
 /**
  * Builds just enough of a getEvents() response entry to exercise the
  * indexer handlers: they only ever read `.topic` and `.value`. `topic` and
