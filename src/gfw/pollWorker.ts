@@ -1,9 +1,7 @@
 import { prisma } from '../db.js';
 import { logger } from '../logger.js';
-import {
-  DEFAULT_MAX_OBSERVATION_GAP_SECONDS,
-  evaluateMilestones,
-} from '../milestones/evaluator.js';
+import { evaluateMilestones } from '../milestones/evaluator.js';
+import { MAX_OBSERVATION_GAP_SECONDS, observationWindowStart } from '../milestones/window.js';
 import { submitAttestation } from '../stellar/attestationSubmitter.js';
 import { queryDataset, type GfwPolygonGeometry } from './client.js';
 import { computeForestCoverChange, type ForestCoverSample } from './forestCoverChange.js';
@@ -15,14 +13,6 @@ import {
 } from './pollStatus.js';
 
 const POLL_INTERVAL_MS = Number(process.env.GFW_POLL_INTERVAL_MS ?? 6 * 60 * 60 * 1000); // 6h default — satellite layers don't refresh faster than that
-
-// How long a hole in a project's check history can be before it stops
-// counting as continuous compliance. Overridable because it only makes
-// sense relative to the poll interval: shorten the interval for a demo and
-// this wants shortening with it.
-const MAX_OBSERVATION_GAP_SECONDS = Number(
-  process.env.GFW_MAX_OBSERVATION_GAP_SECONDS ?? DEFAULT_MAX_OBSERVATION_GAP_SECONDS,
-);
 
 // A project whose polygon can never succeed at GFW (malformed geometry, an
 // area the dataset doesn't cover) would otherwise be retried in full on
@@ -121,15 +111,8 @@ async function evaluateAndAttest(project: { id: string; onChainId: bigint }): Pr
     return;
   }
 
-  // Nothing older than the longest sustain period (plus the gap tolerance)
-  // can change the verdict, so the history fetched is bounded by it rather
-  // than growing with the project's age. A streak longer than that window
-  // gets its `sustainedSeconds` reported as the window length, which is
-  // still past every milestone's requirement — so this can understate the
-  // figure shown, never the readiness decision.
-  const longestSustainSeconds = Math.max(...milestones.map((m) => m.sustainSeconds));
-  const windowStart = new Date(
-    Date.now() - (longestSustainSeconds + MAX_OBSERVATION_GAP_SECONDS) * 1000,
+  const windowStart = observationWindowStart(
+    Math.max(...milestones.map((m) => m.sustainSeconds)),
   );
 
   const observations = await prisma.forestCoverSnapshot.findMany({

@@ -2,6 +2,8 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
+import { evaluateMilestones } from '../milestones/evaluator.js';
+import { MAX_OBSERVATION_GAP_SECONDS, observationWindowStart } from '../milestones/window.js';
 
 // onChainId is a BigInt; the response schemas below type it as a string
 // (Prisma's BigInt has no JSON representation of its own), so it has to be
@@ -55,8 +57,78 @@ const milestoneSchema = z.object({
   createdAt: z.date(),
 });
 
+/** Where a project currently stands against its next pending milestone —
+ * computed with the same evaluator the attestation worker uses, so the UI
+ * and the thing that actually releases funds can't disagree. */
+const nextMilestoneProgressSchema = z.object({
+  index: z.number().int(),
+  retentionFloorBps: z.number().int(),
+  requiredSeconds: z.number().int(),
+  currentRetentionBps: z
+    .number()
+    .int()
+    .nullable()
+    .describe('Retention at the latest check, or null if none has been recorded yet.'),
+  sustainedSeconds: z
+    .number()
+    .int()
+    .describe('Length of the unbroken run of checks at or above the floor.'),
+  ready: z.boolean().describe('Whether this milestone has been earned and awaits attestation.'),
+});
+
+type MilestoneRow = {
+  index: number;
+  retentionFloorBps: number;
+  sustainSeconds: number;
+  status: 'PENDING' | 'ATTESTED';
+};
+
+async function computeNextMilestoneProgress(projectId: string, milestones: MilestoneRow[]) {
+  if (milestones.length === 0) {
+    return null;
+  }
+
+  const observations = await prisma.forestCoverSnapshot.findMany({
+    where: {
+      projectId,
+      checkedAt: {
+        gte: observationWindowStart(Math.max(...milestones.map((m) => m.sustainSeconds))),
+      },
+    },
+    orderBy: { checkedAt: 'desc' },
+    select: { retentionBps: true, checkedAt: true },
+  });
+
+  const { progress } = evaluateMilestones({
+    milestones: milestones.map(({ index, retentionFloorBps, sustainSeconds, status }) => ({
+      index,
+      retentionFloorBps,
+      sustainSeconds,
+      status,
+    })),
+    observations,
+    maxObservationGapSeconds: MAX_OBSERVATION_GAP_SECONDS,
+  });
+
+  if (!progress) {
+    return null;
+  }
+
+  return {
+    index: progress.milestone.index,
+    retentionFloorBps: progress.milestone.retentionFloorBps,
+    requiredSeconds: progress.milestone.sustainSeconds,
+    currentRetentionBps: progress.currentRetentionBps,
+    sustainedSeconds: progress.sustainedSeconds,
+    ready: progress.ready,
+  };
+}
+
 const projectDetailSchema = projectSchema.extend({
   milestones: z.array(milestoneSchema),
+  nextMilestoneProgress: nextMilestoneProgressSchema
+    .nullable()
+    .describe('Null when a project has no schedule, or every milestone is attested.'),
   stats: z.object({
     donorCount: z.number().int(),
     milestonesAttested: z.number().int(),
@@ -123,6 +195,10 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
 
       return {
         ...serializeProject(profile),
+        nextMilestoneProgress: await computeNextMilestoneProgress(
+          project.id,
+          profile.milestones,
+        ),
         stats: {
           donorCount: donations.length,
           milestonesAttested: profile.milestones.filter((m) => m.status === 'ATTESTED').length,
