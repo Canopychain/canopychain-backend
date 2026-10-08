@@ -76,7 +76,13 @@ describe('handleMilestoneVaultEvent', () => {
       },
     });
     await prisma.milestone.create({
-      data: { projectId: project.id, index: 0, thresholdBps: 500, payoutBps: 3_000 },
+      data: {
+        projectId: project.id,
+        index: 0,
+        retentionFloorBps: 9_900,
+        sustainSeconds: 90 * 24 * 60 * 60,
+        payoutBps: 3_000,
+      },
     });
 
     await handleMilestoneVaultEvent(

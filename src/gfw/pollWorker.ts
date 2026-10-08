@@ -34,7 +34,17 @@ const TREE_COVER_DENSITY_VERSION = 'v1.8';
  * system would need a canopy-height or biomass dataset this integration
  * doesn't reach for.
  */
-async function fetchForestCoverPct(polygon: GfwPolygonGeometry): Promise<number> {
+type ForestCoverMeasurement = {
+  /** Standing forest as a share of the whole polygon, for display. */
+  forestCoverPct: number;
+  /** Standing forest as a share of the *baseline* forest, in basis points —
+   * what a milestone's retention floor is actually compared against. */
+  retentionBps: number;
+};
+
+async function fetchForestCoverMeasurement(
+  polygon: GfwPolygonGeometry,
+): Promise<ForestCoverMeasurement> {
   const [totalAreaResult, baselineForestResult, lossSinceBaselineResult] = await Promise.all([
     queryDataset<{ area__ha: number }>(
       TREE_COVER_DENSITY_DATASET,
@@ -60,12 +70,17 @@ async function fetchForestCoverPct(polygon: GfwPolygonGeometry): Promise<number>
   const baselineForestHa = baselineForestResult.data[0]?.area__ha ?? 0;
   const lossHa = lossSinceBaselineResult.data[0]?.area__ha ?? 0;
 
-  if (totalAreaHa <= 0) {
-    return 0;
-  }
-
   const standingForestHa = Math.max(baselineForestHa - lossHa, 0);
-  return (standingForestHa / totalAreaHa) * 100;
+
+  return {
+    forestCoverPct: totalAreaHa > 0 ? (standingForestHa / totalAreaHa) * 100 : 0,
+    // A plot with no baseline forest records 0 rather than a vacuous 100%.
+    // "All of nothing is still standing" would clear a 99% retention floor
+    // on a bare plot, which is exactly the kind of milestone that releases
+    // money for nothing.
+    retentionBps:
+      baselineForestHa > 0 ? Math.round((standingForestHa / baselineForestHa) * 10_000) : 0,
+  };
 }
 
 async function pollProject(project: {
@@ -77,7 +92,9 @@ async function pollProject(project: {
     orderBy: { checkedAt: 'desc' },
   });
 
-  const forestCoverPct = await fetchForestCoverPct(project.polygonGeoJson as GfwPolygonGeometry);
+  const { forestCoverPct, retentionBps } = await fetchForestCoverMeasurement(
+    project.polygonGeoJson as GfwPolygonGeometry,
+  );
   const current: ForestCoverSample = { forestCoverPct, checkedAt: new Date() };
   const previous: ForestCoverSample | null = previousSnapshot
     ? { forestCoverPct: previousSnapshot.forestCoverPct, checkedAt: previousSnapshot.checkedAt }
@@ -90,6 +107,7 @@ async function pollProject(project: {
       projectId: project.id,
       checkedAt: current.checkedAt,
       forestCoverPct,
+      retentionBps,
       changeBps,
     },
   });

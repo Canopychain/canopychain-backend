@@ -106,13 +106,20 @@ describe('GET /projects/:id', () => {
       data: {
         projectId: project.id,
         index: 0,
-        thresholdBps: 500,
+        retentionFloorBps: 9_900,
+        sustainSeconds: 90 * 24 * 60 * 60,
         payoutBps: 3_000,
         status: 'ATTESTED',
       },
     });
     await prisma.milestone.create({
-      data: { projectId: project.id, index: 1, thresholdBps: 1_000, payoutBps: 3_000 },
+      data: {
+        projectId: project.id,
+        index: 1,
+        retentionFloorBps: 9_900,
+        sustainSeconds: 180 * 24 * 60 * 60,
+        payoutBps: 3_000,
+      },
     });
     const donor = await prisma.donor.create({ data: { address: fakeAddress('D') } });
     await prisma.projectDonation.create({

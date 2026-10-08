@@ -40,7 +40,14 @@ const milestoneSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   index: z.number().int(),
-  thresholdBps: z.number().int(),
+  retentionFloorBps: z
+    .number()
+    .int()
+    .describe('Share of baseline forest that must still be standing, in basis points.'),
+  sustainSeconds: z
+    .number()
+    .int()
+    .describe('How long retention must hold at or above the floor before this tranche unlocks.'),
   payoutBps: z.number().int(),
   status: z.enum(['PENDING', 'ATTESTED']),
   attestedAt: z.date().nullable(),

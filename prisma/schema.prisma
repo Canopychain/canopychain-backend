@@ -77,7 +77,15 @@ model Milestone {
   project       Project         @relation(fields: [projectId], references: [id])
   /// Position of this tranche in the project's on-chain schedule (0-based).
   index         Int
-  thresholdBps  Int             @map("threshold_bps")
+  /// Share of baseline forest that must still be standing, in basis points.
+  retentionFloorBps Int         @map("retention_floor_bps")
+  /// How long retention must have continuously held at or above the floor
+  /// before this tranche unlocks. Int, not BigInt, unlike the contract's
+  /// u64: 2^31 seconds is ~68 years, far beyond any plausible conservation
+  /// agreement, and it keeps the value a plain number through the API and
+  /// UI. The indexer rejects a schedule that exceeds it rather than
+  /// silently truncating.
+  sustainSeconds    Int         @map("sustain_seconds")
   payoutBps     Int             @map("payout_bps")
   status        MilestoneStatus @default(PENDING)
   attestedAt    DateTime?       @map("attested_at")
@@ -113,6 +121,13 @@ model ForestCoverSnapshot {
   project     Project  @relation(fields: [projectId], references: [id])
   checkedAt   DateTime @default(now()) @map("checked_at")
   forestCoverPct Float @map("forest_cover_pct")
+  /// Share of the plot's *baseline* forest area still standing, in basis
+  /// points — the figure a milestone's retention floor is compared
+  /// against. Distinct from `forestCoverPct`, which is measured against
+  /// the whole polygon and exists for display. A plot with no baseline
+  /// forest at all records 0 here: it cannot demonstrate retention of
+  /// forest it never had.
+  retentionBps Int     @map("retention_bps")
   changeBps   Int      @map("change_bps")
   rawResponse Json?    @map("raw_response")
 
