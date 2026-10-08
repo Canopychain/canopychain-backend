@@ -24,13 +24,17 @@ silently ignored rather than assuming it is handled.
 | Event topic | Writes | Notes |
 | --- | --- | --- |
 | `deposit` | `projects.total_deposited` (set from the event's running total); `project_donations.amount` (accumulated: prior total + this deposit); creates a placeholder `projects` row (empty `operator_address`, name `Project <id>`) and/or a `donors` row if either doesn't exist yet | The per-donor total isn't in the event payload directly, so it's read-modify-write against the existing `project_donations` row. |
+| `schedule` | every `milestones` row for the project — `index`, `retention_floor_bps`, `sustain_seconds`, `payout_bps` — plus a placeholder `projects` row if one doesn't exist yet | The event carries the whole schedule, so rows are built from it directly with no follow-up `get_schedule` call. Replaced **wholesale** in one transaction (delete-then-create) rather than patched, because the contract allows a schedule to be corrected until the project's first deposit. Refuses to touch a project that already has an attested milestone, and rejects a `sustain_seconds` too large for the `Int` column rather than truncating it into a schedule that looks achievable and isn't. |
 | `attested` | `milestones.status = 'ATTESTED'`, `milestones.attested_at`, `milestones.payout_amount` on the milestone at index `milestonesCompleted - 1`; `projects.total_released` (accumulated: prior total + this payout) | No-ops if the project row doesn't exist yet (`findUnique` returns null → early return) — unlike `deposit`, this handler does not create a placeholder project. |
 
 The following topics are received but **explicitly ignored** (see the
-`default` case in `handleMilestoneVaultEvent`): `schedule`, `pause`,
-`unpause`, `attestor`, `cancelled`, `refund`. None of them are needed for
-the donor-facing explorer or milestone timeline yet — if a future feature
-needs one, it belongs in this table once handled.
+`default` case in `handleMilestoneVaultEvent`): `pause`, `unpause`,
+`attestor`, `cancelled`, `refund`. None of them are needed for the
+donor-facing explorer or milestone timeline yet — if a future feature
+needs one, it belongs in this table once handled. `cancelled` is the
+consequential one: it's why `projects.cancelled` doesn't reflect an
+on-chain `cancel_project`, and why the vault's own `get_vault` is the
+only reliable answer to "has this project been cancelled."
 
 ## Anything not listed here
 

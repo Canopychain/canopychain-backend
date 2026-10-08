@@ -46,9 +46,10 @@ Examples of in-scope issues:
 
 - Bypassing SEP-53 admin signature verification, or replaying a captured
   admin request, to reach an admin-only endpoint.
-- Causing an attestation to be submitted for a milestone whose forest-cover
-  threshold was not actually met, including by manipulating the polled
-  satellite data or the stored polygon it is measured against.
+- Causing an attestation to be submitted for a milestone whose retention
+  floor and sustain period were not actually met — including by
+  manipulating the polled satellite data, the stored polygon it's measured
+  against, or the recorded check history a streak is counted from.
 - Indexer flaws that let crafted on-chain events corrupt mirrored state,
   such as misattributing a donation to the wrong donor or project.
 - Exposure of the attestor secret key, database credentials, or other
