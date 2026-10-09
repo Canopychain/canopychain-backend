@@ -21,8 +21,11 @@ export function buildServer() {
   // Shares the process-wide logger (see logger.ts) rather than building a
   // per-instance one: the test suite calls buildServer() dozens of times,
   // and each own-logger instance would spawn its own pino-pretty worker
-  // thread.
-  const app = Fastify({ logger }).withTypeProvider<ZodTypeProvider>();
+  // thread. Passed as `loggerInstance`, not `logger` — the latter is for
+  // a plain pino *options* object that Fastify builds its own logger
+  // from; handing it an already-built instance there throws
+  // FST_ERR_LOG_INVALID_LOGGER_CONFIG.
+  const app = Fastify({ loggerInstance: logger }).withTypeProvider<ZodTypeProvider>();
 
   // Route schemas below are Zod schemas, not plain JSON Schema — these two
   // compilers are what let Fastify validate/serialize against them, and
