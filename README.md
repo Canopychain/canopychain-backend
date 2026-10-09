@@ -44,6 +44,16 @@ description generated from them is served at `/docs/json` (YAML at
 `/docs/yaml`), with a browsable Swagger UI at `/docs`, whenever the server
 is running.
 
+## Live deployment
+
+Running on [Railway](https://railway.app), against Stellar testnet and the
+contract ids in
+[canopychain-contracts/deployments.json](https://github.com/Canopychain/canopychain-contracts/blob/main/deployments.json):
+
+- API: <https://canopychain-backend-production.up.railway.app>
+- Swagger UI: <https://canopychain-backend-production.up.railway.app/docs>
+- Health: <https://canopychain-backend-production.up.railway.app/health>
+
 ## Related repositories
 
 - [canopychain-contracts](https://github.com/canopychain/canopychain-contracts) — Soroban smart contracts
