@@ -19,6 +19,7 @@ the test suite) and fill these in.
 | `INDEXER_POLL_INTERVAL_MS`      | No       | `5000`                                   | How often the indexer polls `getEvents`.                                                         |
 | `ADMIN_ADDRESS`                 | No***    | — (empty)                                | Stellar public key (`G...`) that must sign requests to admin routes (`/projects/pending`, `/projects/:id/reject`). Admin routes 503 until this is set. Should match the `admin` configured on the deployed contracts. |
 | `LOG_LEVEL`                     | No       | `info`                                   | Pino log level: `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace`.                     |
+| `CORS_ORIGINS`                  | No       | — (empty)                                | Comma-separated extra browser origins allowed to call this API directly, on top of the built-in defaults (`canopychain-frontend.vercel.app`, its Vercel preview deployments, and `localhost:3001`). Only needed for a fork or a renamed Vercel project — see `src/cors.ts`. |
 | `NODE_ENV`                      | No       | unset (treated as development)           | Set to `production` to switch logging to structured JSON instead of pino-pretty. Set automatically inside the Docker image. |
 
 \* Required for the GFW polling worker / attestation submitter to do anything; the rest of the app runs fine without them, they just never see satellite data or attest anything.

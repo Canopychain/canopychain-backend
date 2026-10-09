@@ -1,3 +1,4 @@
+import fastifyCors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
@@ -9,6 +10,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 
+import { isAllowedOrigin } from './cors.js';
 import { prisma } from './db.js';
 import { logger } from './logger.js';
 import { gfwStatusRoutes } from './routes/gfwStatus.js';
@@ -45,6 +47,17 @@ export function buildServer() {
       return;
     }
     reply.send(error);
+  });
+
+  // Registered before every route plugin below, so every response —
+  // including admin/registration POSTs — carries the right headers. No
+  // origin at all (a server-to-server call, or curl) is allowed through
+  // unconditionally; this only gates requests a *browser* sends with an
+  // Origin header, which is exactly who CORS exists to restrict.
+  app.register(fastifyCors, {
+    origin: (origin, callback) => {
+      callback(null, origin === undefined || isAllowedOrigin(origin));
+    },
   });
 
   app.register(fastifySwagger, {
