@@ -4,8 +4,15 @@ WORKDIR /app
 
 # Copied separately from the rest of the source so `npm ci` — and its
 # postinstall `prisma generate`, which needs the schema — is cached across
-# builds unless dependencies or the schema actually change.
-COPY package.json package-lock.json ./
+# builds unless dependencies or the schema actually change. tsconfig.json
+# has to be here too: without it, `prisma generate` can't see this
+# project's `module: NodeNext`, and silently falls back to emitting
+# internal imports with a bare `.ts` extension instead of `.js` — valid
+# for running the TS source directly, but not for code `tsc` is about to
+# compile, since nothing rewrites those extensions and the compiled
+# dist/ ends up importing a `.ts` file that was never copied into the
+# runtime stage.
+COPY package.json package-lock.json tsconfig.json ./
 COPY prisma ./prisma
 RUN npm ci
 
