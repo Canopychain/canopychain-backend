@@ -5,13 +5,21 @@ import { WATCHED_CONTRACT_IDS } from './contracts.js';
 
 const POLL_INTERVAL_MS = Number(process.env.INDEXER_POLL_INTERVAL_MS ?? 5000);
 
+// Ledgers scanned per poll. Well under the RPC's own per-request scan cap
+// (10,000 ledgers on the public testnet RPC), so the window passed as
+// endLedger is always the window the RPC actually scanned. At ~5s per
+// ledger, one poll every 5s catches up a week's backlog in minutes.
+export const SCAN_WINDOW_LEDGERS = 1000;
+export const MAX_EVENTS_PER_POLL = 1000;
+
 type GetEventsResult = Awaited<ReturnType<typeof rpcServer.getEvents>>;
 export type ContractEvent = GetEventsResult['events'][number];
 export type EventHandler = (event: ContractEvent) => Promise<void>;
 
 // Cached in memory during the process lifetime so every poll doesn't hit
 // the DB just to read the starting point; the source of truth is always
-// the `indexer_checkpoints` row, written after every processed event.
+// the `indexer_checkpoints` row. It holds the last ledger fully scanned,
+// written after every processed event and again once a window is done.
 let lastProcessedLedger: number | undefined;
 
 /** Exported so tests can drive a single poll iteration directly, rather
@@ -34,8 +42,30 @@ export async function pollOnce(handleEvent: EventHandler): Promise<void> {
     }
   }
 
+  const { oldestLedger, latestLedger } = await rpcServer.getHealth();
+
+  let startLedger = lastProcessedLedger + 1;
+  if (startLedger < oldestLedger) {
+    // The RPC has already pruned these ledgers, and getEvents rejects a
+    // startLedger outside its retention window, so waiting can't help:
+    // resume from the oldest ledger it still holds.
+    logger.warn(
+      { checkpoint: lastProcessedLedger, oldestLedger },
+      'indexer checkpoint is older than the RPC retention window; events in the gap were skipped',
+    );
+    startLedger = oldestLedger;
+  }
+  if (startLedger > latestLedger) {
+    return;
+  }
+
+  // endLedger is exclusive.
+  const endLedger = Math.min(startLedger + SCAN_WINDOW_LEDGERS, latestLedger + 1);
+
   const { events } = await rpcServer.getEvents({
-    startLedger: lastProcessedLedger + 1,
+    startLedger,
+    endLedger,
+    limit: MAX_EVENTS_PER_POLL,
     filters: [
       {
         type: 'contract',
@@ -52,6 +82,17 @@ export async function pollOnce(handleEvent: EventHandler): Promise<void> {
     // one bounds the damage to "at most the in-flight event" on a crash.
     lastProcessedLedger = event.ledger;
     await saveCheckpoint(lastProcessedLedger);
+  }
+
+  if (events.length < MAX_EVENTS_PER_POLL) {
+    // Every event in the window was handled, so the whole window is done.
+    // Advancing here even when it held no events is what keeps a quiet
+    // contract from leaving the checkpoint behind the retention window.
+    lastProcessedLedger = endLedger - 1;
+    await saveCheckpoint(lastProcessedLedger);
+  } else {
+    // More events may remain in the window; resume after the last one.
+    logger.warn({ startLedger, endLedger }, 'indexer hit its per-poll event limit');
   }
 }
 
