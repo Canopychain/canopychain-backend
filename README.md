@@ -54,6 +54,10 @@ contract ids in
 - Swagger UI: <https://canopychain-backend-production.up.railway.app/docs>
 - Health: <https://canopychain-backend-production.up.railway.app/health>
 
+Each commit to `main` that passes CI is also published as a container image,
+`ghcr.io/canopychain/canopychain-backend`, tagged `latest` and
+`sha-<commit>` ([publish-image.yml](.github/workflows/publish-image.yml)).
+
 ## Related repositories
 
 - [canopychain-contracts](https://github.com/canopychain/canopychain-contracts) — Soroban smart contracts
