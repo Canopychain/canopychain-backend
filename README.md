@@ -46,13 +46,14 @@ is running.
 
 ## Live deployment
 
-Running on [Railway](https://railway.app), against Stellar testnet and the
-contract ids in
+Running on [Render](https://render.com), with its database on
+[Supabase](https://supabase.com), against Stellar testnet and the contract ids
+in
 [canopychain-contracts/deployments.json](https://github.com/Canopychain/canopychain-contracts/blob/main/deployments.json):
 
-- API: <https://canopychain-backend-production.up.railway.app>
-- Swagger UI: <https://canopychain-backend-production.up.railway.app/docs>
-- Health: <https://canopychain-backend-production.up.railway.app/health>
+- API: <https://canopychain-backend.onrender.com>
+- Swagger UI: <https://canopychain-backend.onrender.com/docs>
+- Health: <https://canopychain-backend.onrender.com/health>
 
 Each commit to `main` that passes CI is also published as a container image,
 `ghcr.io/canopychain/canopychain-backend`, tagged `latest` and
